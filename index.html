@@ -518,8 +518,6 @@
     let grades = [];
     let customSubjects = [];
     let currentLoginCode = null;
-    const STORAGE_API = 'https://api.jsonbin.io/v3/b';
-    const API_KEY = '$2a$10$8xHGOQKGVYrJZX7zNJ8TjOeQNGx7N6d3h7nt.DPvN4Dd5nWZ8rHZy'; // Public read/write key
 
     // Lade gespeicherte Noten und eigene Fächer beim Start
     window.onload = function() {
@@ -553,7 +551,7 @@
     }
 
     async function generateNewCode() {
-        const code = generateRandomCode();
+        const code = generateRandomCode(8);
         const data = {
             grades: grades,
             customSubjects: customSubjects,
@@ -561,31 +559,52 @@
         };
 
         try {
-            const response = await fetch(STORAGE_API, {
+            // Verwende dpaste.com API für einfachen Cloud-Storage
+            const response = await fetch('https://dpaste.com/api/v2/', {
                 method: 'POST',
                 headers: {
-                    'Content-Type': 'application/json',
-                    'X-Master-Key': API_KEY,
-                    'X-Bin-Name': code
+                    'Content-Type': 'application/x-www-form-urlencoded',
                 },
-                body: JSON.stringify(data)
+                body: new URLSearchParams({
+                    'content': JSON.stringify(data),
+                    'syntax': 'json',
+                    'expiry_days': 365
+                })
             });
 
             if (response.ok) {
-                const result = await response.json();
-                const binId = result.metadata.id;
+                const pasteUrl = await response.text();
+                // Extrahiere die ID aus der URL
+                const pasteId = pasteUrl.trim().split('/').filter(s => s).pop();
                 
-                currentLoginCode = code + ':' + binId;
+                currentLoginCode = code + ':' + pasteId;
                 localStorage.setItem('login_code_bayern', currentLoginCode);
                 
-                updateSyncStatus(true, code + ':' + binId);
-                showSyncInfo(`Neuer Code erstellt: <strong>${code}:${binId}</strong><br>Speichere diesen Code, um deine Daten auf anderen Geräten zu laden!`);
+                updateSyncStatus(true, currentLoginCode);
+                showSyncInfo(`Neuer Code erstellt: <strong>${currentLoginCode}</strong><br>Speichere diesen Code, um deine Daten auf anderen Geräten zu laden!`);
             } else {
-                alert('Fehler beim Erstellen des Codes. Bitte versuche es erneut.');
+                // Fallback: Verwende nur localStorage mit Code
+                currentLoginCode = code;
+                localStorage.setItem('login_code_bayern', code);
+                localStorage.setItem('cloud_data_' + code, JSON.stringify(data));
+                
+                updateSyncStatus(true, code);
+                showSyncInfo(`Code erstellt: <strong>${code}</strong><br>Hinweis: Dieser Code funktioniert nur auf diesem Browser. Für geräteübergreifende Synchronisation ist eine Internetverbindung erforderlich.`);
             }
         } catch (error) {
             console.error('Sync error:', error);
-            alert('Fehler bei der Cloud-Synchronisation.');
+            // Fallback: Verwende nur localStorage mit Code
+            currentLoginCode = code;
+            localStorage.setItem('login_code_bayern', code);
+            const data = {
+                grades: grades,
+                customSubjects: customSubjects,
+                lastModified: new Date().toISOString()
+            };
+            localStorage.setItem('cloud_data_' + code, JSON.stringify(data));
+            
+            updateSyncStatus(true, code);
+            showSyncInfo(`Code erstellt: <strong>${code}</strong><br>Hinweis: Offline-Modus - Code funktioniert nur auf diesem Gerät.`);
         }
     }
 
@@ -600,25 +619,11 @@
     }
 
     async function loadFromCloud(code) {
-        const parts = code.split(':');
-        if (parts.length !== 2) {
-            alert('Ungültiger Code-Format. Format: CODE:ID');
-            return;
-        }
-
-        const binId = parts[1];
-
-        try {
-            const response = await fetch(`${STORAGE_API}/${binId}/latest`, {
-                headers: {
-                    'X-Master-Key': API_KEY
-                }
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-                const data = result.record;
-                
+        // Prüfe zuerst localStorage (Fallback)
+        const localData = localStorage.getItem('cloud_data_' + code);
+        if (localData) {
+            try {
+                const data = JSON.parse(localData);
                 grades = data.grades || [];
                 customSubjects = data.customSubjects || [];
                 
@@ -630,21 +635,49 @@
                 calculateAverages();
                 
                 updateSyncStatus(true, code);
-                showSyncInfo('Daten erfolgreich von Cloud geladen!');
-            } else {
-                alert('Code nicht gefunden. Bitte überprüfe den Code.');
+                showSyncInfo('Daten erfolgreich geladen (lokal)!');
+                return;
+            } catch (e) {
+                console.error('Error loading local data:', e);
             }
-        } catch (error) {
-            console.error('Load error:', error);
-            alert('Fehler beim Laden der Daten.');
         }
+
+        // Versuche von dpaste zu laden, falls Code mit : getrennt ist
+        if (code.includes(':')) {
+            const parts = code.split(':');
+            const pasteId = parts[1];
+
+            try {
+                const response = await fetch(`https://dpaste.com/${pasteId}.txt`);
+
+                if (response.ok) {
+                    const text = await response.text();
+                    const data = JSON.parse(text);
+                    
+                    grades = data.grades || [];
+                    customSubjects = data.customSubjects || [];
+                    
+                    currentLoginCode = code;
+                    localStorage.setItem('login_code_bayern', code);
+                    
+                    updateCustomSubjectsDropdown();
+                    displayGrades();
+                    calculateAverages();
+                    
+                    updateSyncStatus(true, code);
+                    showSyncInfo('Daten erfolgreich von Cloud geladen!');
+                    return;
+                }
+            } catch (error) {
+                console.error('Load error:', error);
+            }
+        }
+
+        alert('Code nicht gefunden. Bitte überprüfe den Code oder verwende ihn nur auf diesem Gerät.');
     }
 
     async function saveToCloud() {
         if (!currentLoginCode) return;
-
-        const parts = currentLoginCode.split(':');
-        const binId = parts[1];
 
         const data = {
             grades: grades,
@@ -652,17 +685,35 @@
             lastModified: new Date().toISOString()
         };
 
-        try {
-            await fetch(`${STORAGE_API}/${binId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-Master-Key': API_KEY
-                },
-                body: JSON.stringify(data)
-            });
-        } catch (error) {
-            console.error('Save error:', error);
+        // Speichere immer lokal
+        localStorage.setItem('cloud_data_' + currentLoginCode.split(':')[0], JSON.stringify(data));
+
+        // Versuche Cloud-Update falls Code mit : getrennt ist
+        if (currentLoginCode.includes(':')) {
+            try {
+                const response = await fetch('https://dpaste.com/api/v2/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        'content': JSON.stringify(data),
+                        'syntax': 'json',
+                        'expiry_days': 365
+                    })
+                });
+
+                if (response.ok) {
+                    const pasteUrl = await response.text();
+                    const pasteId = pasteUrl.trim().split('/').filter(s => s).pop();
+                    const parts = currentLoginCode.split(':');
+                    currentLoginCode = parts[0] + ':' + pasteId;
+                    localStorage.setItem('login_code_bayern', currentLoginCode);
+                    updateSyncStatus(true, currentLoginCode);
+                }
+            } catch (error) {
+                console.error('Save error:', error);
+            }
         }
     }
 
@@ -694,13 +745,13 @@
         infoEl.classList.add('show');
         setTimeout(() => {
             infoEl.classList.remove('show');
-        }, 5000);
+        }, 8000);
     }
 
-    function generateRandomCode() {
+    function generateRandomCode(length) {
         const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         let code = '';
-        for (let i = 0; i < 6; i++) {
+        for (let i = 0; i < length; i++) {
             code += chars.charAt(Math.floor(Math.random() * chars.length));
         }
         return code;
