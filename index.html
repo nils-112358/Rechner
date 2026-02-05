@@ -12,7 +12,6 @@
             box-sizing: border-box;
         }
 
-```
     body {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
@@ -376,9 +375,10 @@
         background: linear-gradient(135deg, #9ca3af 0%, #6b7280 100%);
     }
 
+    /* ---- Replaced the light gray / white backgrounds with purple tones ---- */
     .subject-group {
         margin-bottom: 25px;
-        background: #f8f9fa;
+        background: linear-gradient(135deg, #2a1640 0%, #4b1fb7 100%); /* purple section background */
         padding: 15px;
         border-radius: 10px;
     }
@@ -401,7 +401,7 @@
     }
 
     .grade-item {
-        background: white;
+        background: linear-gradient(135deg, #341a52 0%, #4c1d95 100%); /* purple card background */
         padding: 15px;
         border-radius: 8px;
         margin-bottom: 8px;
@@ -418,7 +418,6 @@
     }
 
 </style>
-```
 
 </head>
 <body>
@@ -426,7 +425,6 @@
         <h1>Notenrechner</h1>
         <div class="subtitle">Nils Sander</div>
 
-```
     <div class="sync-section">
         <div class="sync-header">☁️ Cloud-Synchronisation</div>
         <div class="sync-content">
@@ -589,7 +587,7 @@
                 localStorage.setItem('cloud_data_' + code, JSON.stringify(data));
                 
                 updateSyncStatus(true, code);
-                showSyncInfo(`Code erstellt: <strong>${code}</strong><br>Hinweis: Dieser Code funktioniert nur auf diesem Browser. Für geräteübergreifende Synchronisation ist eine Internetverbindung erforderlich.`);
+                showSyncInfo(`Code erstellt: <strong>${code}</strong><br>Hinweis: Dieser Code funktioniert nur auf diesem Browser. Für geräteübergreifende Synchronisation ist eine Internetverbindun[...]`);
             }
         } catch (error) {
             console.error('Sync error:', error);
@@ -979,7 +977,6 @@
     }
 
 </script>
-```
 
 </body>
 </html>
